@@ -29,8 +29,17 @@ def decode_image(image: np.ndarray) -> Optional[dict]:
     if image is None or image.size == 0:
         return None
 
-    # Try OpenCV QR first.
     qr_detector = cv2.QRCodeDetector()
+
+    # Try OpenCV single QR decode first, then multi-code fallback.
+    single_text, _, _ = qr_detector.detectAndDecode(image)
+    if single_text:
+        return {
+            "format": "QR_CODE",
+            "text": single_text,
+            "numeric": extract_code_value(single_text),
+        }
+
     ok, decoded_list, _, _ = qr_detector.detectAndDecodeMulti(image)
     if ok and decoded_list:
         for text in decoded_list:
@@ -70,6 +79,11 @@ def add_cors_headers(response):
 @app.route("/", methods=["GET"])
 def index():
     return send_from_directory(".", "index.html")
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"ok": True})
 
 
 @app.route("/decode", methods=["POST", "OPTIONS"])
