@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Barcode Scanner Module</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, sans-serif;
+    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 1rem;
+  }
+
+  /* ── Your existing module card ── */
+  .module-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+
+  .module-card h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111;
+    margin-bottom: 1.25rem;
+  }
+
+  /* ── Input that receives the scanned value ── */
+  .field-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #555;
+    margin-bottom: 6px;
+  }
+
+  .scan-field-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  #scannedValue {
+    flex: 1;
+    height: 44px;
+    padding: 0 12px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: monospace;
+    color: #111;
+    background: #fafafa;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+
+  #scannedValue:focus { border-color: #4f8ef7; }
+  #scannedValue.filled { border-color: #22c55e; background: #f0fdf4; }
+
+  /* ── The single scan button ── */
+  #scanBtn {
+    height: 44px;
+    padding: 0 16px;
+    background: #4f8ef7;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    transition: background 0.15s, transform 0.1s;
+    flex-shrink: 0;
+  }
+
+  #scanBtn:hover  { background: #3a7de0; }
+  #scanBtn:active { transform: scale(0.97); }
+
+  #scanBtn svg { width: 18px; height: 18px; }
+
+  /* ── Overlay backdrop ── */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  #overlay.open { display: flex; }
+
+  /* ── Bottom sheet ── */
+  .sheet {
+    background: #fff;
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-width: 480px;
+    padding: 1.25rem 1.25rem 2rem;
+    animation: slideUp 0.25s ease;
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  .sheet-handle {
+    width: 40px;
+    height: 4px;
+    background: #ddd;
+    border-radius: 2px;
+    margin: 0 auto 1.25rem;
+  }
+
+  .sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #111;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .sheet-options {
+    display: flex;
+    gap: 12px;
+  }
+
+  .sheet-option {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 1.25rem 1rem;
+    border: 1.5px solid #e8e8e8;
+    border-radius: 14px;
+    cursor: pointer;
+    background: #fafafa;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .sheet-option:hover  { background: #f0f6ff; border-color: #4f8ef7; }
+  .sheet-option:active { transform: scale(0.97); }
+
+  .sheet-option svg  { width: 32px; height: 32px; }
+  .sheet-option span { font-size: 13px; font-weight: 500; color: #333; }
+
+  /* ── Camera view (inside overlay, replaces sheet) ── */
+  #cameraView {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 1001;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #cameraView.open { display: flex; }
+
+  #videoEl {
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+  }
+
+  .cam-frame-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 1;
+  }
+
+  #videoEl { width: 100%; height: 100%; object-fit: cover; }
+
+  .cam-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .scan-box {
+    width: 60%;
+    aspect-ratio: 1;
+    position: relative;
+  }
+
+  .scan-box::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0; right: 0;
+    height: 2px;
+    background: rgba(79,142,247,0.9);
+    animation: sweep 2s ease-in-out infinite;
+  }
+
+  @keyframes sweep { 0%,100% { top: 8%; } 50% { top: 90%; } }
+
+  .corner { position: absolute; width: 20px; height: 20px; }
+  .tl { top: -2px; left: -2px; border-top: 3px solid #4f8ef7; border-left: 3px solid #4f8ef7; border-radius: 4px 0 0 0; }
+  .tr { top: -2px; right: -2px; border-top: 3px solid #4f8ef7; border-right: 3px solid #4f8ef7; border-radius: 0 4px 0 0; }
+  .bl { bottom: -2px; left: -2px; border-bottom: 3px solid #4f8ef7; border-left: 3px solid #4f8ef7; border-radius: 0 0 0 4px; }
+  .br { bottom: -2px; right: -2px; border-bottom: 3px solid #4f8ef7; border-right: 3px solid #4f8ef7; border-radius: 0 0 4px 0; }
+
+  .cam-hint {
+    color: rgba(255,255,255,0.75);
+    font-size: 13px;
+    margin-top: 14px;
+    text-align: center;
+  }
+
+  #closeCamera {
+    margin-top: 20px;
+    padding: 10px 28px;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: 1.5px solid rgba(255,255,255,0.3);
+    border-radius: 999px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* ── Hidden file input ── */
+  #galleryInput { display: none; }
+
+  /* ── Hidden canvas for decoding ── */
+  #decodeCanvas { display: none; }
+
+  /* ── Toast feedback ── */
+  #toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #111;
+    color: #fff;
+    font-size: 13px;
+    padding: 8px 18px;
+    border-radius: 999px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 2000;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════
+     YOUR EXISTING MODULE — drop this
+     snippet wherever your form lives
+════════════════════════════════════ -->
+<div class="module-card">
+  <h2>Product entry</h2>
+
+  <p class="field-label">QR / Barcode number</p>
+  <div class="scan-field-row">
+
+    <!-- INPUT FIELD — value gets auto-filled after scan -->
+    <input
+      id="scannedValue"
+      type="text"
+      placeholder="Tap scan or enter manually"
+    />
+
+    <!-- SINGLE SCAN BUTTON -->
+    <button id="scanBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+        <rect x="7" y="7" width="10" height="10" rx="1"/>
+      </svg>
+      Scan
+    </button>
+  </div>
+</div>
+<!-- ════════════════════════════════════ END MODULE ════ -->
+
+
+<!-- Bottom sheet overlay -->
+<div id="overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <p class="sheet-title">Choose scan method</p>
+    <div class="sheet-options">
+
+      <!-- Option 1: Camera -->
+      <button class="sheet-option" id="optCamera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>Camera</span>
+      </button>
+
+      <!-- Option 2: Gallery -->
+      <button class="sheet-option" id="optGallery">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <span>Gallery</span>
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- Camera fullscreen view -->
+<div id="cameraView">
+  <div class="cam-frame-wrap">
+    <video id="videoEl" autoplay playsinline muted></video>
+    <div class="cam-overlay">
+      <div class="scan-box">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+    </div>
+  </div>
+  <p class="cam-hint">Point camera at QR code or barcode</p>
+  <button id="closeCamera">Cancel</button>
+</div>
+
+<!-- Hidden file input for gallery -->
+<input type="file" id="galleryInput" accept="image/*">
+
+<!-- Hidden canvas used to decode frames -->
+<canvas id="decodeCanvas"></canvas>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<!-- ZXing barcode library -->
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+
+<script>
+  /* ── DOM refs ── */
+  const scanBtn      = document.getElementById('scanBtn');
+  const overlay      = document.getElementById('overlay');
+  const optCamera    = document.getElementById('optCamera');
+  const optGallery   = document.getElementById('optGallery');
+  const cameraView   = document.getElementById('cameraView');
+  const videoEl      = document.getElementById('videoEl');
+  const closeCamera  = document.getElementById('closeCamera');
+  const galleryInput = document.getElementById('galleryInput');
+  const canvas       = document.getElementById('decodeCanvas');
+  const ctx          = canvas.getContext('2d');
+  const valueInput   = document.getElementById('scannedValue');
+  const toast        = document.getElementById('toast');
+
+  let stream       = null;
+  let scanning     = false;
+  let rafId        = null;
+
+  /* ── ZXing reader (supports all code types) ── */
+  function buildReader() {
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.QR_CODE,
+      ZXing.BarcodeFormat.DATA_MATRIX,
+      ZXing.BarcodeFormat.AZTEC,
+      ZXing.BarcodeFormat.PDF_417,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.CODE_93,
+      ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.CODABAR,
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    const r = new ZXing.MultiFormatReader();
+    r.setHints(hints);
+    return r;
+  }
+
+  /* ── Decode raw ImageData ── */
+  function decodeImageData(imageData) {
+    const reader = buildReader();
+    const lum = new ZXing.RGBLuminanceSource(imageData.data, imageData.width, imageData.height);
+    const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+    return reader.decode(bmp); // throws NotFoundException if not found
+  }
+
+  /* ── Fill the input field ── */
+  function fillValue(text) {
+    valueInput.value = text;
+    valueInput.classList.add('filled');
+    showToast('Scanned: ' + (text.length > 30 ? text.slice(0, 30) + '…' : text));
+  }
+
+  /* ── Toast helper ── */
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  /* ══════════════════════════════════
+     STEP 1 — Scan button opens sheet
+  ══════════════════════════════════ */
+  scanBtn.addEventListener('click', () => {
+    overlay.classList.add('open');
+  });
+
+  /* Close sheet on backdrop tap */
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeSheet();
+  });
+
+  function closeSheet() {
+    overlay.classList.remove('open');
+  }
+
+  /* ══════════════════════════════════
+     STEP 2a — Camera option
+  ══════════════════════════════════ */
+  optCamera.addEventListener('click', async () => {
+    closeSheet();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      videoEl.srcObject = stream;
+      cameraView.classList.add('open');
+      scanning = true;
+      videoEl.onloadedmetadata = () => { videoEl.play(); scanLoop(); };
+    } catch (err) {
+      showToast('Camera access denied — use Gallery instead');
+    }
+  });
+
+  /* Live camera scan loop */
+  function scanLoop() {
+    if (!scanning) return;
+    if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+      canvas.width  = videoEl.videoWidth;
+      canvas.height = videoEl.videoHeight;
+      ctx.drawImage(videoEl, 0, 0);
+      try {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const result  = decodeImageData(imgData);
+        if (result) {
+          stopCamera();
+          fillValue(result.getText());
+          return;
+        }
+      } catch (_) {}
+    }
+    rafId = requestAnimationFrame(scanLoop);
+  }
+
+  function stopCamera() {
+    scanning = false;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    videoEl.srcObject = null;
+    cameraView.classList.remove('open');
+  }
+
+  closeCamera.addEventListener('click', stopCamera);
+
+  /* ══════════════════════════════════
+     STEP 2b — Gallery option
+  ══════════════════════════════════ */
+  optGallery.addEventListener('click', () => {
+    closeSheet();
+    galleryInput.click();
+  });
+
+  galleryInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      try {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const result  = decodeImageData(imgData);
+        fillValue(result.getText());
+      } catch (_) {
+        showToast('No barcode found — try a clearer image');
+      }
+      e.target.value = ''; // reset so same file can be picked again
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      showToast('Could not load image');
+    };
+
+    img.src = url;
+  });
+</script>
+</body>
+</html>
