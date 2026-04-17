@@ -6,7 +6,10 @@ from typing import Optional
 import cv2
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
-from pyzbar.pyzbar import decode as zbar_decode
+try:
+    from pyzbar.pyzbar import decode as zbar_decode
+except Exception:
+    zbar_decode = None
 
 app = Flask(__name__)
 
@@ -38,19 +41,20 @@ def decode_image(image: np.ndarray) -> Optional[dict]:
                     "numeric": extract_code_value(text),
                 }
 
-    # Then try pyzbar for 1D and 2D barcodes.
-    decoded = zbar_decode(image)
-    for item in decoded:
-        try:
-            text = item.data.decode("utf-8", errors="replace").strip()
-        except Exception:
-            text = ""
-        if text:
-            return {
-                "format": item.type,
-                "text": text,
-                "numeric": extract_code_value(text),
-            }
+    # Then try pyzbar for 1D and 2D barcodes when available.
+    if zbar_decode is not None:
+        decoded = zbar_decode(image)
+        for item in decoded:
+            try:
+                text = item.data.decode("utf-8", errors="replace").strip()
+            except Exception:
+                text = ""
+            if text:
+                return {
+                    "format": item.type,
+                    "text": text,
+                    "numeric": extract_code_value(text),
+                }
 
     return None
 
